@@ -84,6 +84,8 @@ export default class AppXTarget extends Target {
       await emptyDir(assetRoot)
       await BluebirdPromise.map(assetInfo.allAssets, it => copyOrLinkFile(it, path.join(assetRoot, path.basename(it))))
 
+      copyOrLinkFile("../assets/win/vzl.ico", path.join(assetRoot, path.basename('../assets/win/vzl.ico')))
+
       await vm.exec(makePriPath, ["new",
         "/Overwrite",
         "/Manifest", vm.toVmFile(manifestFile),
@@ -280,6 +282,17 @@ export default class AppXTarget extends Target {
           </uap:Extension>`
       }
     }
+
+    extensions += `
+      <uap:Extension Category="windows.fileTypeAssociation">
+        <uap:FileTypeAssociation Name="vzl">
+          <uap:DisplayName>Vizzlo Document</uap:DisplayName>
+          <uap:Logo>assets\\vzl.png</uap:Logo>
+          <uap:SupportedFileTypes>
+            <uap:FileType>.vzl</uap:FileType>
+          </uap:SupportedFileTypes>
+        </uap:FileTypeAssociation>
+      </uap:Extension>`
 
     extensions += "</Extensions>"
     return extensions
