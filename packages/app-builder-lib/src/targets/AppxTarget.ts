@@ -84,8 +84,6 @@ export default class AppXTarget extends Target {
       await emptyDir(assetRoot)
       await BluebirdPromise.map(assetInfo.allAssets, it => copyOrLinkFile(it, path.join(assetRoot, path.basename(it))))
 
-      copyOrLinkFile("../assets/win/vzl.ico", path.join(assetRoot, path.basename('../assets/win/vzl.ico')))
-
       await vm.exec(makePriPath, ["new",
         "/Overwrite",
         "/Manifest", vm.toVmFile(manifestFile),
