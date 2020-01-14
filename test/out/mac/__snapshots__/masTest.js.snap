@@ -16,10 +16,8 @@ Object {
   "CFBundleName": "Test App ßW",
   "CFBundlePackageType": "APPL",
   "CFBundleShortVersionString": "1.1.0",
-  "ElectronTeamID": "744739DJ4Y",
   "LSApplicationCategoryType": "your.app.category.type",
   "NSHighResolutionCapable": true,
-  "NSMainNibFile": "MainMenu",
   "NSPrincipalClass": "AtomApplication",
   "NSSupportsAutomaticGraphicsSwitching": true,
 }
@@ -47,10 +45,8 @@ Object {
   "CFBundleName": "Test App ßW",
   "CFBundlePackageType": "APPL",
   "CFBundleShortVersionString": "1.1.0",
-  "ElectronTeamID": "X8C9Z9L4HW",
   "LSApplicationCategoryType": "your.app.category.type",
   "NSHighResolutionCapable": true,
-  "NSMainNibFile": "MainMenu",
   "NSPrincipalClass": "AtomApplication",
   "NSSupportsAutomaticGraphicsSwitching": true,
 }
@@ -83,10 +79,8 @@ Object {
   "CFBundleName": "Test App ßW",
   "CFBundlePackageType": "APPL",
   "CFBundleShortVersionString": "1.1.0",
-  "ElectronTeamID": "X8C9Z9L4HW",
   "LSApplicationCategoryType": "your.app.category.type",
   "NSHighResolutionCapable": true,
-  "NSMainNibFile": "MainMenu",
   "NSPrincipalClass": "AtomApplication",
   "NSSupportsAutomaticGraphicsSwitching": true,
 }

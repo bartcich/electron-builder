@@ -1,6 +1,6 @@
 // Jest Snapshot v1, https://goo.gl/fbAQLP
 
-exports[`electronDist 1`] = `"ENOENT"`;
+exports[`electronDist 1`] = `"corrupted Electron dist"`;
 
 exports[`one-package 1`] = `
 Object {
@@ -118,7 +118,6 @@ Object {
     },
   },
   "NSHighResolutionCapable": true,
-  "NSMainNibFile": "MainMenu",
   "NSPrincipalClass": "AtomApplication",
   "NSSupportsAutomaticGraphicsSwitching": true,
 }
@@ -208,7 +207,6 @@ Object {
     },
   },
   "NSHighResolutionCapable": true,
-  "NSMainNibFile": "MainMenu",
   "NSPrincipalClass": "AtomApplication",
   "NSSupportsAutomaticGraphicsSwitching": true,
 }
@@ -220,7 +218,6 @@ Array [
   "app-update.yml",
   "app.asar",
   "bn.lproj",
-  "electron.asar",
   "en.lproj",
 ]
 `;

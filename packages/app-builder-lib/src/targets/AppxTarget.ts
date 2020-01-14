@@ -1,7 +1,7 @@
 import BluebirdPromise from "bluebird-lst"
 import { Arch, asArray, deepAssign, InvalidConfigurationError, log } from "builder-util"
 import { copyOrLinkFile, walk } from "builder-util/out/fs"
-import { emptyDir, readdir, readFile, writeFile } from "fs-extra-p"
+import { emptyDir, readdir, readFile, writeFile } from "fs-extra"
 import * as path from "path"
 import { AppXOptions } from "../"
 import { getSignVendorPath, isOldWin6 } from "../codeSign/windowsCodeSign"
@@ -185,7 +185,7 @@ export default class AppXTarget extends Target {
             return name
 
           case "version":
-            return appInfo.getVersionInWeirdWindowsForm(false)
+            return appInfo.getVersionInWeirdWindowsForm(options.setBuildNumber === true)
 
           case "applicationId":
             const result = options.applicationId || options.identityName || appInfo.name
@@ -226,13 +226,13 @@ export default class AppXTarget extends Target {
             return lockScreenTag(userAssets)
 
           case "defaultTile":
-            return defaultTileTag(userAssets)
+            return defaultTileTag(userAssets, options.showNameOnTiles || false)
 
           case "splashScreen":
             return splashScreenTag(userAssets)
 
           case "arch":
-            return arch === Arch.ia32 ? "x86" : "x64"
+            return arch === Arch.ia32 ? "x86" : (arch === Arch.arm64 ? "arm64" : "x64")
 
           case "resourceLanguages":
             return resourceLanguageTag(asArray(options.languages))
@@ -251,13 +251,16 @@ export default class AppXTarget extends Target {
     const uriSchemes = asArray(this.packager.config.protocols)
       .concat(asArray(this.packager.platformSpecificBuildOptions.protocols))
 
+    const fileAssociations = asArray(this.packager.config.fileAssociations)
+      .concat(asArray(this.packager.platformSpecificBuildOptions.fileAssociations))
+
     let isAddAutoLaunchExtension = this.options.addAutoLaunchExtension
     if (isAddAutoLaunchExtension === undefined) {
       const deps = this.packager.info.metadata.dependencies
       isAddAutoLaunchExtension = deps != null && deps["electron-winstore-auto-launch"] != null
     }
 
-    if (!isAddAutoLaunchExtension && uriSchemes.length === 0) {
+    if (!isAddAutoLaunchExtension && uriSchemes.length === 0 && fileAssociations.length === 0) {
       return ""
     }
 
@@ -281,16 +284,18 @@ export default class AppXTarget extends Target {
       }
     }
 
-    extensions += `
-      <uap:Extension Category="windows.fileTypeAssociation">
-        <uap:FileTypeAssociation Name="vzl">
-          <uap:DisplayName>Vizzlo Document</uap:DisplayName>
-          <uap:Logo>assets\\vzl.png</uap:Logo>
-          <uap:SupportedFileTypes>
-            <uap:FileType>.vzl</uap:FileType>
-          </uap:SupportedFileTypes>
-        </uap:FileTypeAssociation>
-      </uap:Extension>`
+    for (const fileAssociation of fileAssociations) {
+      for (const ext of asArray(fileAssociation.ext)) {
+        extensions += `
+          <uap:Extension Category="windows.fileTypeAssociation">
+            <uap:FileTypeAssociation Name="${ext}">
+              <uap:SupportedFileTypes>
+                <uap:FileType>.${ext}</uap:FileType>
+              </uap:SupportedFileTypes>
+            </uap:FileTypeAssociation>
+          </uap:Extension>`
+      }
+    }
 
     extensions += "</Extensions>"
     return extensions
@@ -314,7 +319,7 @@ function lockScreenTag(userAssets: Array<string>): string {
   }
 }
 
-function defaultTileTag(userAssets: Array<string>): string {
+function defaultTileTag(userAssets: Array<string>, showNameOnTiles: boolean): string {
   const defaultTiles: Array<string> = ["<uap:DefaultTile", 'Wide310x150Logo="assets\\Wide310x150Logo.png"']
 
   if (isDefaultAssetIncluded(userAssets, "LargeTile.png")) {
@@ -324,7 +329,16 @@ function defaultTileTag(userAssets: Array<string>): string {
     defaultTiles.push('Square71x71Logo="assets\\SmallTile.png"')
   }
 
-  defaultTiles.push("/>")
+  if (showNameOnTiles) {
+    defaultTiles.push(">")
+    defaultTiles.push("<uap:ShowNameOnTiles>")
+    defaultTiles.push("<uap:ShowOn", 'Tile="wide310x150Logo"', "/>")
+    defaultTiles.push("<uap:ShowOn", 'Tile="square150x150Logo"', "/>")
+    defaultTiles.push("</uap:ShowNameOnTiles>")
+    defaultTiles.push("</uap:DefaultTile>")
+  } else {
+    defaultTiles.push("/>")
+  }
   return defaultTiles.join(" ")
 }
 
