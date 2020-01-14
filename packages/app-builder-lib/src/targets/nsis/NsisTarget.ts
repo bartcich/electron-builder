@@ -1,17 +1,18 @@
 import { path7za } from "7zip-bin"
 import BluebirdPromise from "bluebird-lst"
-import { Arch, asArray, AsyncTaskManager, getPlatformIconFileName, InvalidConfigurationError, log, spawnAndWrite, use, exec } from "builder-util"
+import { executeAppBuilder, Arch, asArray, AsyncTaskManager, getPlatformIconFileName, InvalidConfigurationError, log, spawnAndWrite, use, exec } from "builder-util"
 import { PackageFileInfo, UUID, CURRENT_APP_PACKAGE_FILE_NAME, CURRENT_APP_INSTALLER_FILE_NAME } from "builder-util-runtime"
-import { getBinFromGithub } from "../../binDownload"
-import { statOrNull, walk } from "builder-util/out/fs"
+import { getBinFromUrl } from "../../binDownload"
+import { statOrNull, walk, exists } from "builder-util/out/fs"
 import { hashFile } from "../../util/hash"
 import _debug from "debug"
-import { readFile, stat, unlink } from "fs-extra-p"
+import { readFile, stat, unlink } from "fs-extra"
 import { Lazy } from "lazy-val"
 import * as path from "path"
 import { Target } from "../../core"
 import { DesktopShortcutCreationPolicy, getEffectiveOptions } from "../../options/CommonWindowsInstallerConfiguration"
-import { isSafeGithubName, normalizeExt } from "../../platformPackager"
+import { computeSafeArtifactNameIfNeeded, normalizeExt } from "../../platformPackager"
+import { isMacOsCatalina } from "../../util/macosVersion"
 import { time } from "../../util/timer"
 import { execWine } from "../../wine"
 import { WinPackager } from "../../winPackager"
@@ -22,7 +23,7 @@ import { addCustomMessageFileInclude, createAddLangsMacro, LangConfigurator } fr
 import { computeLicensePage } from "./nsisLicense"
 import { NsisOptions, PortableOptions } from "./nsisOptions"
 import { NsisScriptGenerator } from "./nsisScriptGenerator"
-import { AppPackageHelper, NSIS_PATH, nsisTemplatesDir } from "./nsisUtil"
+import { AppPackageHelper, NSIS_PATH, nsisTemplatesDir, UninstallerReader } from "./nsisUtil"
 
 const debug = _debug("electron-builder:nsis")
 
@@ -30,7 +31,7 @@ const debug = _debug("electron-builder:nsis")
 const ELECTRON_BUILDER_NS_UUID = UUID.parse("50e065bc-3134-11e6-9bab-38c9862bdaf3")
 
 // noinspection SpellCheckingInspection
-const nsisResourcePathPromise = new Lazy(() => getBinFromGithub("nsis-resources", "3.3.0", "4okc98BD0v9xDcSjhPVhAkBMqos+FvD/5/H72fTTIwoHTuWd2WdD7r+1j72hxd+ZXxq1y3FRW0x6Z3jR0VfpMw=="))
+const nsisResourcePathPromise = new Lazy(() => getBinFromUrl("nsis-resources", "3.4.1", "Dqd6g+2buwwvoG1Vyf6BHR1b+25QMmPcwZx40atOT57gH27rkjOei1L0JTldxZu4NFoEmW4kJgZ3DlSWVON3+Q=="))
 
 const USE_NSIS_BUILT_IN_COMPRESSOR = false
 
@@ -46,8 +47,8 @@ export class NsisTarget extends Target {
     this.packageHelper.refCount++
 
     this.options = targetName === "portable" ? Object.create(null) : {
-      ...this.packager.config.nsis,
       preCompressedFileExtensions: [".avi", ".mov", ".m4v", ".mp4", ".m4p", ".qt", ".mkv", ".webm", ".vmdk"],
+      ...this.packager.config.nsis,
     }
 
     if (targetName !== "nsis") {
@@ -192,7 +193,7 @@ export class NsisTarget extends Target {
     let estimatedSize = 0
     if (this.isPortable && options.useZip) {
       for (const [arch, dir] of this.archs.entries()) {
-        defines[arch === Arch.x64 ? "APP_DIR_64" : "APP_DIR_32"] = dir
+        defines[arch === Arch.x64 ? "APP_DIR_64" : (arch === Arch.arm64 ? "APP_DIR_ARM64" : "APP_DIR_32")] = dir
       }
     }
     else if (USE_NSIS_BUILT_IN_COMPRESSOR && this.archs.size === 1) {
@@ -202,7 +203,7 @@ export class NsisTarget extends Target {
       await BluebirdPromise.map(this.archs.keys(), async arch => {
         const fileInfo = await this.packageHelper.packArch(arch, this)
         const file = fileInfo.path
-        const defineKey = arch === Arch.x64 ? "APP_64" : "APP_32"
+        const defineKey = arch === Arch.x64 ? "APP_64" : (arch === Arch.arm64 ? "APP_ARM64" : "APP_32")
         defines[defineKey] = file
         defines[`${defineKey}_NAME`] = path.basename(file)
         // nsis expect a hexadecimal string
@@ -227,7 +228,13 @@ export class NsisTarget extends Target {
 
     this.configureDefinesForAllTypeOfInstaller(defines)
     if (isPortable) {
-      defines.REQUEST_EXECUTION_LEVEL = (options as PortableOptions).requestExecutionLevel || "user"
+      const portableOptions = options as PortableOptions
+      defines.REQUEST_EXECUTION_LEVEL = portableOptions.requestExecutionLevel || "user"
+      defines.UNPACK_DIR_NAME = portableOptions.unpackDirName || (await executeAppBuilder(["ksuid"]))
+
+      if (portableOptions.splashImage != null) {
+        defines.SPLASH_IMAGE = portableOptions.splashImage
+      }
     }
     else {
       await this.configureDefines(oneClick, defines)
@@ -263,8 +270,7 @@ export class NsisTarget extends Target {
     await this.executeMakensis(defines, commands, sharedHeader + await this.computeFinalScript(script, true))
     await Promise.all<any>([packager.sign(installerPath), defines.UNINSTALLER_OUT_FILE == null ? Promise.resolve() : unlink(defines.UNINSTALLER_OUT_FILE)])
 
-    const safeArtifactName = isSafeGithubName(installerFilename) ? installerFilename : this.generateGitHubInstallerName()
-
+    const safeArtifactName = computeSafeArtifactNameIfNeeded(installerFilename, () => this.generateGitHubInstallerName())
     let updateInfo: any
     if (this.isWebInstaller) {
       updateInfo = createNsisWebDifferentialUpdateInfo(installerPath, packageFiles)
@@ -314,12 +320,33 @@ export class NsisTarget extends Target {
 
     // https://github.com/electron-userland/electron-builder/issues/2103
     // it is more safe and reliable to write uninstaller to our out dir
-    const uninstallerPath = path.join(this.outDir, `.__uninstaller-${this.name}-${this.packager.appInfo.sanitizedName}.exe`)
+    const uninstallerPath = path.join(this.outDir, `__uninstaller-${this.name}-${this.packager.appInfo.sanitizedName}.exe`)
     const isWin = process.platform === "win32"
     defines.BUILD_UNINSTALLER = null
     defines.UNINSTALLER_OUT_FILE = isWin ? uninstallerPath : path.win32.join("Z:", uninstallerPath)
     await this.executeMakensis(defines, commands, sharedHeader + await this.computeFinalScript(script, false))
-    await execWine(installerPath)
+
+    // http://forums.winamp.com/showthread.php?p=3078545
+    if (isMacOsCatalina()) {
+      try {
+        UninstallerReader.exec(installerPath, uninstallerPath)
+      }
+      catch (error) {
+        log.warn("packager.vm is used: " + error.message)
+
+        const vm = await packager.vm.value
+        await vm.exec(installerPath, [])
+        // Parallels VM can exit after command execution, but NSIS continue to be running
+        let i = 0
+        while (!(await exists(uninstallerPath)) && i++ < 100) {
+          // noinspection JSUnusedLocalSymbols
+          await new Promise((resolve, _reject) => setTimeout(resolve, 300))
+        }
+      }
+    }
+    else {
+      await execWine(installerPath)
+    }
     await packager.sign(uninstallerPath, "  Signing NSIS uninstaller")
 
     delete defines.BUILD_UNINSTALLER

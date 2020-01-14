@@ -1,9 +1,9 @@
 import { Arch, debug, exec, use } from "builder-util"
 import { statOrNull } from "builder-util/out/fs"
+import { executeAppBuilderAndWriteJson, executeAppBuilderAsJson } from "../util/appBuilder"
 import { getNotLocalizedLicenseFile } from "../util/license"
-import { readFile, unlink, writeFile } from "fs-extra-p"
+import { readFile, unlink, writeFile } from "fs-extra"
 import * as path from "path"
-import { build as buildPlist, parse as parsePlist } from "plist"
 import { PkgOptions } from ".."
 import { filterCFBundleIdentifier } from "../appInfo"
 import { findIdentity, Identity } from "../codeSign/macCodeSign"
@@ -43,7 +43,7 @@ export class PkgTarget extends Target {
       arch,
     })
 
-    const keychainName = (await packager.codeSigningInfo.value).keychainName
+    const keychainFile = (await packager.codeSigningInfo.value).keychainFile
 
     const appOutDir = this.outDir
     // https://developer.apple.com/library/content/documentation/DeveloperTools/Reference/DistributionDefinitionRef/Chapters/Distribution_XML_Ref.html
@@ -52,7 +52,7 @@ export class PkgTarget extends Target {
     const innerPackageFile = path.join(appOutDir, `${filterCFBundleIdentifier(appInfo.id)}.pkg`)
     const componentPropertyListFile = path.join(appOutDir, `${filterCFBundleIdentifier(appInfo.id)}.plist`)
     const identity = (await Promise.all([
-      findIdentity(certType, options.identity || packager.platformSpecificBuildOptions.identity, keychainName),
+      findIdentity(certType, options.identity || packager.platformSpecificBuildOptions.identity, keychainFile),
       this.customizeDistributionConfiguration(distInfoFile, appPath),
       this.buildComponentPackage(appPath, componentPropertyListFile, innerPackageFile),
     ]))[0]
@@ -61,7 +61,7 @@ export class PkgTarget extends Target {
       throw new Error(`Cannot find valid "${certType}" to sign standalone installer, please see https://electron.build/code-signing`)
     }
 
-    const args = prepareProductBuildArgs(identity, keychainName)
+    const args = prepareProductBuildArgs(identity, keychainFile)
     args.push("--distribution", distInfoFile)
     args.push(artifactPath)
     use(options.productbuild, it => args.push(...it as any))
@@ -80,6 +80,17 @@ export class PkgTarget extends Target {
 
     const options = this.options
     let distInfo = await readFile(distInfoFile, "utf-8")
+
+    if (options.mustClose != null && options.mustClose.length !== 0) {
+      const startContent = `    <pkg-ref id="${this.packager.appInfo.id}">\n        <must-close>\n`
+      const endContent = "        </must-close>\n    </pkg-ref>\n</installer-gui-script>"
+      let mustCloseContent = ""
+      options.mustClose.forEach(appId => {
+        mustCloseContent += `            <app id="${appId}"/>\n`
+      })
+      distInfo = distInfo.replace("</installer-gui-script>", `${startContent}${mustCloseContent}${endContent}`)
+    }
+
     const insertIndex = distInfo.lastIndexOf("</installer-gui-script>")
     distInfo = distInfo.substring(0, insertIndex) + `    <domains enable_anywhere="${options.allowAnywhere}" enable_currentUserHome="${options.allowCurrentUserHome}" enable_localSystem="${options.allowRootDirectory}" />\n` + distInfo.substring(insertIndex)
 
@@ -124,7 +135,7 @@ export class PkgTarget extends Target {
     ])
 
     // process the template plist
-    const plistInfo = parsePlist(await readFile(propertyListOutputFile, "utf8"))
+    const plistInfo = (await executeAppBuilderAsJson<Array<any>>(["decode-plist", "-f", propertyListOutputFile]))[0].filter((it: any) => it.RootRelativeBundlePath !== "Electron.dSYM")
     if (plistInfo.length > 0) {
       const packageInfo = plistInfo[0]
 
@@ -149,7 +160,7 @@ export class PkgTarget extends Target {
         packageInfo.BundleOverwriteAction = options.overwriteAction
       }
 
-      await writeFile(propertyListOutputFile, buildPlist(plistInfo))
+      await executeAppBuilderAndWriteJson(["encode-plist"], {[propertyListOutputFile]: plistInfo})
     }
 
     // now build the package

@@ -2,13 +2,12 @@ import { AllPublishOptions, asArray, CancellationToken, newError, PublishConfigu
 import { randomBytes } from "crypto"
 import { Notification } from "electron"
 import { EventEmitter } from "events"
-import { ensureDir, outputFile, readFile, rename, unlink } from "fs-extra-p"
+import { ensureDir, outputFile, readFile, rename, unlink } from "fs-extra"
 import { OutgoingHttpHeaders } from "http"
 import { safeLoad } from "js-yaml"
 import { Lazy } from "lazy-val"
 import * as path from "path"
-import { eq as isVersionsEqual, gt as isVersionGreaterThan, parse as parseVersion, prerelease as getVersionPreleaseComponents, SemVer } from "semver"
-import "source-map-support/register"
+import { eq as isVersionsEqual, gt as isVersionGreaterThan, lt as isVersionLessThan, parse as parseVersion, prerelease as getVersionPreleaseComponents, SemVer } from "semver"
 import { AppAdapter } from "./AppAdapter"
 import { createTempUpdateFile, DownloadedUpdateHelper } from "./DownloadedUpdateHelper"
 import { ElectronAppAdapter } from "./ElectronAppAdapter"
@@ -176,6 +175,10 @@ export abstract class AppUpdater extends EventEmitter {
 
     if (options != null) {
       this.setFeedURL(options)
+
+      if (typeof options !== "string" && options.requestHeaders) {
+        this.requestHeaders = options.requestHeaders
+      }
     }
   }
 
@@ -232,7 +235,7 @@ export abstract class AppUpdater extends EventEmitter {
     return checkForUpdatesPromise
   }
 
-  protected isUpdaterActive(): boolean {
+  public isUpdaterActive(): boolean {
     if (!this.app.isPackaged) {
       this._logger.info("Skip checkForUpdatesAndNotify because application is not packed")
       return false
@@ -318,18 +321,17 @@ export abstract class AppUpdater extends EventEmitter {
     // https://github.com/electron-userland/electron-builder/pull/3111#issuecomment-405033227
     // https://github.com/electron-userland/electron-builder/pull/3111#issuecomment-405030797
     const isLatestVersionNewer = isVersionGreaterThan(latestVersion, currentVersion)
-    if (!this.allowDowngrade) {
-      return isLatestVersionNewer
+    const isLatestVersionOlder = isVersionLessThan(latestVersion, currentVersion)
+
+    if (isLatestVersionNewer) {
+      return true
     }
 
-    const currentVersionPrereleaseComponent = getVersionPreleaseComponents(currentVersion)
-    const latestVersionPrereleaseComponent = getVersionPreleaseComponents(latestVersion)
-    if (currentVersionPrereleaseComponent === latestVersionPrereleaseComponent) {
-      // allowDowngrade taken in account only if channel differs
-      return isLatestVersionNewer
+    if (this.allowDowngrade && isLatestVersionOlder) {
+      return true
     }
 
-    return true
+    return false
   }
 
   protected async getUpdateInfoAndProvider(): Promise<UpdateInfoAndProvider> {
@@ -613,7 +615,7 @@ export abstract class AppUpdater extends EventEmitter {
       await removeFileIfAny()
 
       if (e instanceof CancellationError) {
-        log.info("Cancelled")
+        log.info("cancelled")
         this.emit("update-cancelled", updateInfo)
       }
       throw e

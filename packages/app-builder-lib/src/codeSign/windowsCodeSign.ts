@@ -2,7 +2,7 @@ import { InvalidConfigurationError, asArray, log } from "builder-util/out/util"
 import { getBin } from "../binDownload"
 import { executeAppBuilderAsJson } from "../util/appBuilder"
 import { computeToolEnv, ToolInfo } from "../util/bundledTool"
-import { rename } from "fs-extra-p"
+import { rename } from "fs-extra"
 import * as os from "os"
 import * as path from "path"
 import { WindowsConfiguration } from ".."
@@ -28,7 +28,7 @@ export interface WindowsSignOptions {
 }
 
 export interface WindowsSignTaskConfiguration extends WindowsSignOptions {
-  // set if output path differs from input (e.g. osslsigncode cannot sign file inplace)
+  // set if output path differs from input (e.g. osslsigncode cannot sign file in-place)
   resultOutputPath?: string
 
   hash: string
@@ -81,16 +81,17 @@ export interface FileCodeSigningInfo {
 
 export async function getCertInfo(file: string, password: string): Promise<CertificateInfo> {
   let result: any = null
+  const errorMessagePrefix = "Cannot extract publisher name from code signing certificate. As workaround, set win.publisherName. Error: "
   try {
     result = await executeAppBuilderAsJson<any>(["certificate-info", "--input", file, "--password", password])
   }
   catch (e) {
-    throw new Error(`Cannot extract publisher name from code signing certificate, please file issue. As workaround, set win.publisherName: ${e.stack || e}`)
+    throw new Error(`${errorMessagePrefix}${e.stack || e}`)
   }
 
   if (result.error != null) {
     // noinspection ExceptionCaughtLocallyJS
-    throw new InvalidConfigurationError(`Cannot extract publisher name from code signing certificate: ${result.error}`)
+    throw new InvalidConfigurationError(`${errorMessagePrefix}${result.error}`)
   }
   return result
 }
@@ -169,13 +170,13 @@ async function doSign(configuration: CustomWindowsSignTaskConfiguration, package
   }
   catch (e) {
     if (e.message.includes("The file is being used by another process") || e.message.includes("The specified timestamp server either could not be reached")) {
-      log.warn(`First attempt to code sign failed, another attempt will be made in 2 seconds: ${e.message}`)
+      log.warn(`First attempt to code sign failed, another attempt will be made in 15 seconds: ${e.message}`)
       await new Promise((resolve, reject) => {
         setTimeout(() => {
           vm.exec(tool, args, {timeout, env})
             .then(resolve)
             .catch(reject)
-        }, 2000)
+        }, 15000)
       })
     }
     throw e
@@ -199,7 +200,7 @@ function computeSignToolArgs(options: WindowsSignTaskConfiguration, isWin: boole
   const args = isWin ? ["sign"] : ["-in", inputFile, "-out", outputPath]
 
   if (process.env.ELECTRON_BUILDER_OFFLINE !== "true") {
-    const timestampingServiceUrl = options.options.timeStampServer || "http://timestamp.verisign.com/scripts/timstamp.dll"
+    const timestampingServiceUrl = options.options.timeStampServer || "http://timestamp.digicert.com"
     if (isWin) {
       args.push(options.isNest || options.hash === "sha256" ? "/tr" : "/t", options.isNest || options.hash === "sha256" ? (options.options.rfc3161TimeStampServer || "http://timestamp.comodoca.com/rfc3161") : timestampingServiceUrl)
     }

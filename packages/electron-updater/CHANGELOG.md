@@ -1,3 +1,32 @@
+## 4.2.0
+
+### Bug Fixes
+
+* when AllowDowngrade is true and latest version is older, take the update ([#4218](https://github.com/electron-userland/electron-builder/issues/4218)) ([5bf4498](https://github.com/electron-userland/electron-builder/commit/5bf4498))
+
+### Features
+
+* export updaters for configurability ([#4250](https://github.com/electron-userland/electron-builder/issues/4250)) ([9df845e](https://github.com/electron-userland/electron-builder/commit/9df845e))
+
+## 4.1.2
+
+### Features
+
+* expose `isUpdaterActive`, closes [#4028](https://github.com/electron-userland/electron-builder/issues/4028)
+
+### Bug Fixes
+
+* cannot download differentially: Error: Maximum allowed size is 5 MB ([c5c2eeb](https://github.com/electron-userland/electron-builder/commit/c5c2eeb)), closes [#3564](https://github.com/electron-userland/electron-builder/issues/3564)
+* reduce electron-updater size ([8025fb4](https://github.com/electron-userland/electron-builder/commit/8025fb4)), closes [#3953](https://github.com/electron-userland/electron-builder/issues/3953)
+
+## 4.0.14
+
+From 4.0.5 to 4.0.13 — maintenance-only releases to update dependencies.
+
+### Bug Fixes
+
+* update from prerelease to prerelease crash, closes [#3163](https://github.com/electron-userland/electron-builder/issues/3163)
+
 ## 4.0.5
 
 ### Bug Fixes
