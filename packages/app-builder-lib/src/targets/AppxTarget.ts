@@ -289,6 +289,8 @@ export default class AppXTarget extends Target {
         extensions += `
           <uap:Extension Category="windows.fileTypeAssociation">
             <uap:FileTypeAssociation Name="${ext}">
+            <uap:DisplayName>Vizzlo Document</uap:DisplayName>
+            <uap:Logo>assets\\vzl.png</uap:Logo>
               <uap:SupportedFileTypes>
                 <uap:FileType>.${ext}</uap:FileType>
               </uap:SupportedFileTypes>
